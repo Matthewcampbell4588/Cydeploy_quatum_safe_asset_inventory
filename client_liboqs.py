@@ -6,9 +6,6 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import secrets
 
-#Dont use AI code here -- try and develope it yourself (only use it to clarify, but not code for you)
-#started at 7/9/2025 7:00pm
-#End at 7/9/2025 (change this everytime done coding)
 
 client_keys = {}
 
@@ -46,57 +43,96 @@ def dilithium_key_gen():
             dilithium_public_key = diltium_kem.generate_keypair()
             now = datetime.now(timezone.utc)
             timestamp = now + timedelta(days=30)
-            client_keys['Client_Dilithium_sig'] = {
+            client_keys = {
 
             'dilithium_priv_key' : diltium_kem,
             'dilithium_pub_key' : dilithium_public_key,
              'created' : now,
              'expires' : timestamp
-             
+
              }
+            
+    return client_keys
 
+def recv_loop(client_socket):
+    msg_prefix = client_socket.recv(4)#Gets server keys
+    total_bytes = int.from_bytes(msg_prefix)
+    remaining_bytes = total_bytes
+    json_data = b''
 
+    while remaining_bytes > 0:
+        packet = client_socket.recv(remaining_bytes)
+        json_data += packet
+        remaining_bytes = remaining_bytes - len(packet)
+    data = json.loads(json_data.decode())
+    return data
 
-def key_exchange(client_socket):
+def send_to_server(client_socket , data):
+    json_string = json.dumps(data)
+    #Grabs json length
+    length = len(json_string.encode())  
+    #converts int to binary rep so that it can be sent to the client 
+    msg_lenth  = length.to_bytes(4,'big')
+    print(f'Message header length; {msg_lenth}')
+    #Sending how long the msg will be to the client so that when sending the json file it knows when to stop. Based on what I implmented on client end
+    client_socket.send(msg_lenth)
+    client_socket.send(json_string.encode())
+
+def key_exchange(client_socket,dilithium_keys):
     try:
         #This is to check if the expiration of the dilithium key before sending it. If its expired it created a new set of keys 
-        if client_keys['Server_Dilithium_sig']['timestamp'] < datetime.now(timezone.utc):
-            dilithium_key_gen()
-        raw_server_data = client_socket.recv(1024)#Gets server keys
-        server_data = json.load(raw_server_data.decode())
+        if dilithium_keys['expires'] < datetime.now(timezone.utc):
+            dilithium_keys = dilithium_key_gen()
+
+        #Might make into its own function for recving key data
+        
+        server_data = recv_loop(client_socket)
+        
+        print(server_data)
 
 
         with oqs.KeyEncapsulation('Kyber512') as client_kem:
-            pass
+            ciphertext , shared_secret = client_kem.encap_secret(bytes.fromhex(server_data['server_Kyber_key']))
+            print(f'This is the client dervided secret: {shared_secret}')
 
-        server_to_client_package = {
 
-            'server_Dilithium_key': client_keys['Server_Dilithium_sig']['dilithium_pub_key'],
-            'server_Kyber_key': server_data['server_Kyber_key']
+        client_to_server_package = {
+
+            'Dilithium_pub_key': dilithium_keys['dilithium_pub_key'].hex(),
+            'shared_ciphertext': ciphertext.hex()
         }
 
-        data = json.dump(client_package) #packages into json format
-        client_socket.send(data.encode()) #Send json of servers public key to client for encapsulation and signiture verification
-        json_client_data = client_socket.recv(1024) #gets ciphertext and client dilithium public key
-        shared_secret = kyber_keys['session_priv'].decap_secret((server_to_client_package['ciphertext']))#Here is where the shared secret is created and now both client and server have the same symmetric key
+        send_to_server(client_socket,client_to_server_package)
         
-        client_keys = {
+        keys = {
 
             'shared_secret' : shared_secret,
-            'dilithium' : client_keys['client_Dilithium_sig']['dilithium_pub_key']
+            'dilithium' : bytes.fromhex(server_data['server_Dilithium_key'])
 
         }
-
-        return client_keys
+        print(f'Keys Exchanged:{keys}')
+        print(shared_secret)
+        return keys
         
     except Exception as e:
         print(f'Error: {e}')
 
 
 def main():
+    msg = b'please work :('
+    dilithium_object = dilithium_key_gen()
     with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as client_socket:
         client_socket.connect(('localhost',8080))
-        key_exchange(client_socket)
+        keys = key_exchange(client_socket,dilithium_object)
+        ciphertext , iv = encrypt(msg,keys['shared_secret'])
+        
+        encryption_data = {
 
+            'ciphertext' : ciphertext.hex(),
+            'iv': iv.hex()
+        }
+
+        send_to_server(client_socket,encryption_data)
 
 main()
+
