@@ -1,35 +1,35 @@
 import json
 import aes_encrpyt
-import key_handler
+import key_handler 
 
 #recv format
-def recv_format(client_socket):
-    msg_prefix = client_socket.recv(4)#recieves 4 byte header for message length
+def recv_format(socket):
+    msg_prefix = socket.recv(4)#recieves 4 byte header for message length
     total_bytes = int.from_bytes(msg_prefix) #converts it to a int
     remaining_bytes = total_bytes #initlize for loop stores total and subtracts based off data recv
     json_data = b''#stores it in binary
 
     #recv loop were it adds each packet of data to the json_data varaible, then using that packet length subtracts it from total length left
     while remaining_bytes > 0:
-        packet = client_socket.recv(remaining_bytes)#each data packet
+        packet = socket.recv(remaining_bytes)#each data packet
         json_data += packet#data packet being stored in binary format
         remaining_bytes = remaining_bytes - len(packet)#checks how much of the data is left based on the 4 byte header
     data = json.loads(json_data.decode())#loads the json to a dic
     return data
 
 #send format 
-def send_format(client_socket , data):
+def send_format(socket , data):
     json_string = json.dumps(data)#creates a json format for data 
     #Grabs json length
     length = len(json_string.encode())  
     #converts int to binary rep so that it can be sent to the client 
     msg_lenth  = length.to_bytes(4,'big')
     #Sending how long the msg will be to the client so that when sending the json file it knows when to stop. Based on what I implmented on client end
-    client_socket.send(msg_lenth)#sends header
-    client_socket.send(json_string.encode())#sends data 
+    socket.send(msg_lenth)#sends header
+    socket.send(json_string.encode())#sends data 
     
     #this function automates encrypting and signing messages to be sent 
-def send_encrypted_message (client_socket,d_key,shared_secret,plaintext):
+def send_encrypted_message (socket,d_key,shared_secret,plaintext):
         ciphertext , iv = aes_encrpyt.encrypt(plaintext,shared_secret)
         #The payload stores the ciphertext and iv 
         payload = {
@@ -46,11 +46,11 @@ def send_encrypted_message (client_socket,d_key,shared_secret,plaintext):
 
         }
 
-        send_format(client_socket,package)
+        send_format(socket,package)
 
-def recv_encrypted_message(client_socket,d_key,shared_secret):
+def recv_encrypted_message(socket,d_key,shared_secret):
         try:
-            data = recv_format(client_socket)
+            data = recv_format(socket)
             is_valid = key_handler.message_verfication(bytes.fromhex(data['payload']),bytes.fromhex(data['sig']),d_key)
             if is_valid is not True:
                 raise ValueError('Signiture Verfication Failed')
@@ -58,13 +58,13 @@ def recv_encrypted_message(client_socket,d_key,shared_secret):
                 plaintext  = aes_encrpyt.decrypt(bytes.fromhex(data['payload']['ciphertext']),shared_secret)
                 return plaintext
         except Exception as e:
-            print(f'[ERROR] {e}')
+            print(f'[-] ERROR: {e}')
 
 
 
     #Exchange Utilities
 # key_sends formats the data correctly to be sent to either client or server 
-def key_send(client_socket,dilithium_keys,key):
+def key_send(socket,dilithium_keys,key):
         
 
         if isinstance(key,dict) and 'session_pub' in key:
@@ -84,12 +84,12 @@ def key_send(client_socket,dilithium_keys,key):
              raise ValueError('Invalid Key format to key_send()')
         
         #Send to client or server
-        send_format(client_socket,package)
+        send_format(socket,package)
         
-#recvs data and formats its from hex to bytes and stores it checks if it comes from client or server
-def key_recv(client_socket):
+#recvs data and formats its from hex to bytes and stores it checks if it comes from client or server ( might be able to delete seems useless)
+def key_recv(socket):
         #returns the correctly formmated data from client 
-        data = recv_format(client_socket)
+        data = recv_format(socket)
 
         #checks if it is coming from server 
         if 'server_session_pub' in data:
