@@ -4,18 +4,13 @@ import key_handler
 import message_loop_utils 
 import key_refresh
 import command_handler 
-import random
+import random as k
 
 
 
-commands = {
 
 
-        'video' : 'hello' ,
-        'message' : 'Hello World',
-        'rand num' : random.range(100)
 
-}
 
 
 
@@ -38,34 +33,47 @@ def client_handler(socket,client_IP,dilithium_Key):
     
     while True:
         try:
+            data = {}
             #gets data here 
-            recv_data = message_loop_utils.recv_encrypted_message(socket,dilithium_Key['dilithium_pub_key'],shared_secret,timestamp)
+            recv_data = message_loop_utils.recv_encrypted_message(socket,Client_shared_keys['client_dilithium_pub_key'],shared_secret)
             #checks to see if client is still connected since if it disconnects it will send a None or b'' to the recv
             if recv_data == b'':
                 print(f"[DISCONNECTED] {client_IP} has disconnected.")
                 break#exits loop on graceful shutdown
-
+            
+            print(f'Data recv: {recv_data}')
             #checks data
-            if recv_data['command'] == 'video':
-                data = {
-                    'type' : 'command',
-                    'command' : commands['video']
-                }
-            elif recv_data['command'] == 'message':
-                data = {
-                    'type' : 'command',
-                    'command' : commands['message']
-                }
-            elif recv_data['command'] == 'rand num':
-                data = {
-                    'type' : 'command',
-                    'command' : commands['rand num']
-                }
-            else:
-                raise ValueError("ERROR: INVALID COMMAND")
+            if recv_data.get('type') == 'command_req':
+        
+                try:
+                    if recv_data['command'] == 'video':
+                        
+                        data = {
+                            'type' : 'command_reponse',
+                            'action' : 'video' ,
+                            'command': 'https://www.youtube.com/watch?v=tCHYrpiqDxI'
+                        }
+                    elif recv_data['command'] == 'message':
+                        data = {
+                            'type' : 'command_reponse',
+                            'action' : 'message' ,
+                            'command':'Hello World'
+                        }
+                    elif recv_data['command'] == 'rand num':
+                        data = {
+                            'type' : 'command_reponse',
+                            'action' : 'rand num' ,
+                            'command': k.randint(1,10)
+                        }
+                    else:
+                        raise AssertionError('Invalid Command')
+                except AssertionError as e:
+                    print(f'[-] ERROR: {e}')
+                
+    
 
             #sends command to client
-            command_handler.commands(data,dilithium_Key['dilithium_priv_key'])
+            command_handler.command_controller(data,dilithium_Key['dilithium_priv_key'],shared_secret,socket)
 
 
             #Here is where the session loop should break if the client disconnects

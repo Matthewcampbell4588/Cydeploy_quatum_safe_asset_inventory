@@ -30,7 +30,8 @@ def send_format(socket , data):
     
     #this function automates encrypting and signing messages to be sent 
 def send_encrypted_message (socket,d_key,shared_secret,plaintext):
-        ciphertext , iv = aes_encrpyt.encrypt(plaintext,shared_secret)
+        plaintext = json.dumps(plaintext)
+        ciphertext , iv = aes_encrpyt.encrypt(plaintext.encode(),shared_secret)
         #The payload stores the ciphertext and iv 
         payload = {
 
@@ -38,27 +39,31 @@ def send_encrypted_message (socket,d_key,shared_secret,plaintext):
             'iv' : iv.hex()
         }
         #this signs the serialized data  
-        signature = key_handler.message_signing(d_key, json.dumps(payload).encode())
-
+        
+        signature = key_handler.message_signing(d_key, json.dumps(payload, sort_keys=True).encode())
+       
         package = {
             'payload': payload,
-            'sig' : signature
+            'sig' : signature.hex()
 
         }
 
         send_format(socket,package)
 
 def recv_encrypted_message(socket,d_key,shared_secret):
-        try:
+       
             data = recv_format(socket)
-            is_valid = key_handler.message_verfication(bytes.fromhex(data['payload']),bytes.fromhex(data['sig']),d_key)
+    
+            is_valid = key_handler.message_verfication(json.dumps(data['payload'], sort_keys=True).encode(),bytes.fromhex(data['sig']),d_key)
             if is_valid is not True:
                 raise ValueError('Signiture Verfication Failed')
             else:
-                plaintext  = aes_encrpyt.decrypt(bytes.fromhex(data['payload']['ciphertext']),shared_secret)
-                return plaintext
-        except Exception as e:
-            print(f'[-] ERROR: {e}')
+                print('sig is valid')
+                plaintext  = aes_encrpyt.decrypt(bytes.fromhex(data['payload']['ciphertext']),shared_secret,bytes.fromhex(data['payload']['iv']))
+                return json.loads(plaintext) 
+            
+        #except Exception as e:
+           # print(f'[-] ERROR: {e}')
 
 
 

@@ -10,6 +10,7 @@ keys = {
 
 
 
+
 def main():
     dilithium_object = key_handler.dilithium_key_gen()
     
@@ -20,12 +21,7 @@ def main():
         ciphertext , shared_secret = key_handler.kyber_encap_decap(server_keys['server_session_pub'],None,'encap')
         message_loop_utils.key_send(sock,dilithium_object,ciphertext)
         print(shared_secret)
-        while True:
-
-            client_gui.start_GUI(sock,dilithium_object['dilithium_pub_key'],shared_secret)
+        client_gui.start_GUI(sock, dilithium_object['dilithium_priv_key'], shared_secret, server_keys['server_dilithium_pub_key'])
         
-            data = message_loop_utils.recv_encrypted_message(sock,dilithium_object['dilithium_pub_key'],shared_secret)
-
-
 main()
 
