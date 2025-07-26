@@ -5,9 +5,8 @@ import json
 
 #creates a signiture with the message and dilithium private key *note message must be in bytes before signing*
 def message_signing(dilithium_private_key,msg):
-    dilithium_priv = dilithium_private_key['dilithium_priv_key']
      #add dilithium check here to see if it needs to be renewed before the message is sent (take into consideration how it might update if there are mutiple clients)
-    signiture  = dilithium_priv.sign(msg)
+    signiture  = dilithium_private_key.sign(msg)
     return signiture
 
 #checks msg and signiture with dilithium public key
