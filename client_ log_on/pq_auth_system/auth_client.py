@@ -1,1 +1,0 @@
-# client authentication code placeholder

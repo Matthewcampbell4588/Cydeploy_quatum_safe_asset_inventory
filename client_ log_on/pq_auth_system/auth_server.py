@@ -1,1 +1,0 @@
-# server authentication handling code placeholder
