@@ -21,14 +21,16 @@ def encrypt(data, key):
     cipher = Cipher(algorithms.AES256(key), modes.CBC(iv))#uses 
     encryptor = cipher.encryptor()
     ciphertext = encryptor.update(pad(data)) + encryptor.finalize()
-    print(f'[DEBUG] ciphertext: {ciphertext}, Key: {key}, iv: {iv}')
+    print('encrypted Data')
+    #print(f'[DEBUG] ciphertext: {ciphertext}, Key: {key}, iv: {iv}')
     return ciphertext, iv
 
 #Decryption Function: Takes in ciphertext, servers decap Shared secret(uses private key, so client-->server shared secret), and intial vector 
 def decrypt(ciphertext, key, iv):
-    print(f'[DEBUG] ciphertext: {ciphertext}, Key: {key}, iv: {iv}')
+    #print(f'[DEBUG] ciphertext: {ciphertext}, Key: {key}, iv: {iv}')
     cipher = Cipher(algorithms.AES256(key), modes.CBC(iv))
     decryptor = cipher.decryptor()
     plaintext_padded = decryptor.update(ciphertext) + decryptor.finalize()
+    print('data decrypted')
     return unpad(plaintext_padded)
 
