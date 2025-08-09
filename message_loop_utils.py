@@ -1,36 +1,48 @@
 import json
 import aes_encrpyt
-import key_handler
-
+import key_handler 
+from datetime import datetime
 #recv format
-def recv_format(client_socket):
-    msg_prefix = client_socket.recv(4)#recieves 4 byte header for message length
-    total_bytes = int.from_bytes(msg_prefix) #converts it to a int
-    remaining_bytes = total_bytes #initlize for loop stores total and subtracts based off data recv
-    json_data = b''#stores it in binary
-
-    #recv loop were it adds each packet of data to the json_data varaible, then using that packet length subtracts it from total length left
-    while remaining_bytes > 0:
-        packet = client_socket.recv(remaining_bytes)#each data packet
-        json_data += packet#data packet being stored in binary format
-        remaining_bytes = remaining_bytes - len(packet)#checks how much of the data is left based on the 4 byte header
-    data = json.loads(json_data.decode())#loads the json to a dic
-    return data
+def recv_format(socket):
+    msg_prefix = socket.recv(4)
+    if not msg_prefix or len(msg_prefix) < 4:
+        return b''
+    print(f"[DEBUG] Waiting for message, got prefix: {msg_prefix}")
+    total_bytes = int.from_bytes(msg_prefix, 'big')
+    if total_bytes <= 0:
+        return b''
+    print(f"[DEBUG] Expecting {total_bytes} bytes...")
+    json_data = b''
+    while len(json_data) < total_bytes:
+        packet = socket.recv(total_bytes - len(json_data))
+        if not packet:
+            return b''
+        json_data += packet
+        print(f"[DEBUG] Received chunk: {len(packet)} bytes, total so far: {len(json_data)} bytes")
+        
+    print(f"[DEBUG] Finished receiving message. Total bytes: {len(json_data)}")
+    try:
+        
+        return json.loads(json_data.decode())
+    except json.JSONDecodeError:
+        print("[-] JSON decode failed. Raw data:", json_data)
+        return b''
 
 #send format 
-def send_format(client_socket , data):
+def send_format(socket , data):
     json_string = json.dumps(data)#creates a json format for data 
     #Grabs json length
     length = len(json_string.encode())  
     #converts int to binary rep so that it can be sent to the client 
     msg_lenth  = length.to_bytes(4,'big')
     #Sending how long the msg will be to the client so that when sending the json file it knows when to stop. Based on what I implmented on client end
-    client_socket.send(msg_lenth)#sends header
-    client_socket.send(json_string.encode())#sends data 
+    socket.send(msg_lenth)#sends header
+    socket.send(json_string.encode())#sends data 
     
     #this function automates encrypting and signing messages to be sent 
-def send_encrypted_message (client_socket,d_key,shared_secret,plaintext):
-        ciphertext , iv = aes_encrpyt.encrypt(plaintext,shared_secret)
+def send_encrypted_message (socket,d_key,shared_secret,plaintext):
+        plaintext = json.dumps(plaintext)
+        ciphertext , iv = aes_encrpyt.encrypt(plaintext.encode(),shared_secret)
         #The payload stores the ciphertext and iv 
         payload = {
 
@@ -38,75 +50,108 @@ def send_encrypted_message (client_socket,d_key,shared_secret,plaintext):
             'iv' : iv.hex()
         }
         #this signs the serialized data  
-        signature = key_handler.message_signing(d_key, json.dumps(payload).encode())
-
+        
+        signature = key_handler.message_signing(d_key, json.dumps(payload, sort_keys=True).encode())
+       
         package = {
             'payload': payload,
-            'sig' : signature
+            'sig' : signature.hex()
 
         }
+        print(f'encrypted data send: {ciphertext} (for demo) | Dilithum Signiture for payload: {signature}\n')
+        send_format(socket,package)
 
-        send_format(client_socket,package)
+def recv_encrypted_message(socket,d_key,shared_secret):
+    
+    data = recv_format(socket)
+    if data == b'':  # connection closed or bad data
+        return b''
 
-def recv_encrypted_message(client_socket,d_key,shared_secret):
-        try:
-            data = recv_format(client_socket)
-            is_valid = key_handler.message_verfication(bytes.fromhex(data['payload']),bytes.fromhex(data['sig']),d_key)
-            if is_valid is not True:
-                raise ValueError('Signiture Verfication Failed')
-            else:
-                plaintext  = aes_encrpyt.decrypt(bytes.fromhex(data['payload']['ciphertext']),shared_secret)
-                return plaintext
-        except Exception as e:
-            print(f'[ERROR] {e}')
+    # Verify signature
+    is_valid = key_handler.message_verfication(
+        json.dumps(data['payload'], sort_keys=True).encode(),
+        bytes.fromhex(data['sig']),
+        d_key
+    )
+    if not is_valid:
+        raise ValueError('Signature Verification Failed')
+
+    # Decrypt message
+    plaintext = aes_encrpyt.decrypt(
+        bytes.fromhex(data['payload']['ciphertext']),
+        shared_secret,
+        bytes.fromhex(data['payload']['iv'])
+    )
+
+    return json.loads(plaintext)
 
 
 
-    #Exchange Utilities
+#Only used for intial key exchange
 # key_sends formats the data correctly to be sent to either client or server 
-def key_send(client_socket,dilithium_keys,key):
+def key_send(socket,dilithium_keys,key):
         
 
         if isinstance(key,dict) and 'session_pub' in key:
             #Stores kyber and dilithium pub keys from server to send to client
-            package = {
-
-                'server_session_pub':key['session_pub'].hex(),
-                'server_dilithium_pub_key': dilithium_keys['dilithium_pub_key'].hex()
+            payload = {
+                'type' : "server_keys",
+                'server_session_pub': key['session_pub'].hex(),
             }
         elif isinstance(key,bytes):
-            package = {
-                    'ciphertext' : key.hex() ,
-                    'client_dilithium_pub_key':dilithium_keys['dilithium_pub_key'].hex()
+            payload = {
+                'type' : "client_keys",
+                'ciphertext' : key.hex() ,
+        
              }
             #stores what the client would generate to send to server
         else:
              raise ValueError('Invalid Key format to key_send()')
-        
-        #Send to client or server
-        send_format(client_socket,package)
-        
-#recvs data and formats its from hex to bytes and stores it checks if it comes from client or server
-def key_recv(client_socket):
-        #returns the correctly formmated data from client 
-        data = recv_format(client_socket)
+        print(f'keys sent: {payload} (demo only)\n')
 
-        #checks if it is coming from server 
-        if 'server_session_pub' in data:
-        # This formats the package from the server for the client
-            keys = {
-            'server_session_pub': bytes.fromhex(data['server_session_pub']),
-            'server_dilithium_pub_key': bytes.fromhex(data['server_dilithium_pub_key'])
+        signature = key_handler.message_signing(dilithium_keys['dilithium_priv_key'], json.dumps(payload, sort_keys=True).encode())
+
+        package = {
+             
+            'payload' : payload,
+            'dilithium_pub_key': dilithium_keys['dilithium_pub_key'].hex(),
+            'dilithium_expiration' : dilithium_keys['expires'].isoformat(),
+            'sig' : signature.hex()
         }
 
-        elif 'ciphertext' in data:
+        #Send to client or server
+        print('keys sent')
+        send_format(socket,package)
+        
+#recvs data and formats its from hex to bytes and stores it checks if it comes from client or server ( might be able to delete seems useless)
+def key_recv(socket):
+        #returns the correctly formmated data from client 
+        data = recv_format(socket)
+    
+
+
+
+        is_valid = key_handler.message_verfication(json.dumps(data['payload'], sort_keys=True).encode(),bytes.fromhex(data['sig']),bytes.fromhex(data['dilithium_pub_key']))
+        if is_valid is not True:
+            raise ValueError('Signiture Verfication Failed')
+
+        #checks if it is coming from server 
+        if  data['payload']['type'] == 'server_keys':
+        # This formats the package from the server for the client
+            keys = {
+            'server_session_pub': bytes.fromhex(data['payload']['server_session_pub']),
+            'server_dilithium_pub_key': bytes.fromhex(data['dilithium_pub_key'])
+        }
+
+        elif  data['payload']['type'] == 'client_keys':
         # This formats the package from the client for the server
             keys = {
-            'client_ciphertext': bytes.fromhex(data['ciphertext']),
-            'client_dilithium_pub_key': bytes.fromhex(data['client_dilithium_pub_key'])
+            'client_ciphertext': bytes.fromhex(data['payload']['ciphertext']),
+            'client_dilithium_pub_key': bytes.fromhex(data['dilithium_pub_key']),
+            'client_dilithium_expiration' : datetime.fromisoformat(data['dilithium_expiration'])
         }
 
         else:
             raise ValueError("Received unknown key format in key_recv")
-
+        print(f'keys recv: {keys} (demo only)\n')
         return keys 

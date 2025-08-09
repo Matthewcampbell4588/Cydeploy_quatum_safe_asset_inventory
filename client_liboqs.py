@@ -1,14 +1,10 @@
 import socket
 import key_handler
-import message_loop_utils
-client_keys = {}
+import client_gui
+keys = {
 
-def recv_loop():
-    while True:
-        pass
-def send_loop():
-    while True:
-        pass
+}
+
 
 
 
@@ -16,15 +12,12 @@ def send_loop():
 
 def main():
     dilithium_object = key_handler.dilithium_key_gen()
-   
-    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as client_socket:
-        client_socket.connect(('localhost',8080))
-        #Here is the clients working example of the key exchange and message sig verfication 
-        server_keys  = key_handler.key_recv(client_socket)
-        ciphertext , shared_secret = key_handler.kyber_encap_decap(server_keys['server_session_pub'],None,'encap')
+    
+    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as sock:
+        sock.connect(('localhost',8080))
+        shared_secret , server_dilithium_key = key_handler.client_key_exchange(sock,dilithium_object)
+        print(f'Derived shared secret: {shared_secret}\n')
+        client_gui.start_GUI(sock, dilithium_object['dilithium_priv_key'], shared_secret, server_dilithium_key)
         
-        
-        
-
 main()
 
