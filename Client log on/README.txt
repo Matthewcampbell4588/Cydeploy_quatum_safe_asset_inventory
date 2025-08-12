@@ -1,0 +1,1 @@
+Run `server.py` and then `client.py` in PyCharm to test login. Sample credentials: username='password', password='password'.
