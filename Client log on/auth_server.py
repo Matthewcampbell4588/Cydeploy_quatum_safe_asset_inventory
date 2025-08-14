@@ -1,4 +1,4 @@
-mport hashlib
+import hashlib
 import json
 from datetime import datetime
 from message_loop_utils import send_encrypted_message, recv_encrypted_message
@@ -7,8 +7,13 @@ def load_users():
     users = {}
     with open("users.txt", "r") as f:
         for line in f:
-            u_hash, p_hash, reset = line.strip().split(",")
-            users[u_hash] = (p_hash, reset)
+            parts = line.strip().split(",")
+            if len(parts) == 4:
+                u_hash, p_hash, reset, role = parts
+                users[u_hash] = (p_hash, reset, role)
+            else:
+                u_hash, p_hash, reset = parts
+                users[u_hash] = (p_hash, reset, "guest")
     return users
 
 def check_password_expired(reset_str):
@@ -28,16 +33,16 @@ def handle_login(client_socket, client_dilithium_key, shared_secret):
     p_hash = creds["password"]
 
     if u_hash in users:
-        stored_p, reset = users[u_hash]
+        stored_p, reset, role = users[u_hash]
         if stored_p == p_hash:
             if check_password_expired(reset):
-                send_encrypted_message(client_socket, None, shared_secret, "LOGIN_FAIL: PASSWORD EXPIRED")
+                send_encrypted_message(client_socket, None, shared_secret, {"status": "FAIL", "message": "PASSWORD EXPIRED"})
                 return False
             if not is_within_allowed_time():
-                send_encrypted_message(client_socket, None, shared_secret, "LOGIN_DENIED: OUTSIDE HOURS")
+                send_encrypted_message(client_socket, None, shared_secret, {"status": "FAIL", "message": "OUTSIDE LOGIN HOURS"})
                 return False
-            send_encrypted_message(client_socket, None, shared_secret, "LOGIN_SUCCESS")
+            send_encrypted_message(client_socket, None, shared_secret, {"status": "SUCCESS", "role": role})
             return True
 
-    send_encrypted_message(client_socket, None, shared_secret, "LOGIN_FAIL")
+    send_encrypted_message(client_socket, None, shared_secret, {"status": "FAIL", "message": "INVALID CREDENTIALS"})
     return False
