@@ -3,6 +3,8 @@ import json
 from datetime import datetime, time
 from message_loop_utils import send_encrypted_message, recv_encrypted_message
 
+user_role = None  # Global to track authenticated user's role
+
 def hash_sha256(data):
     return hashlib.sha256(data.encode()).hexdigest()
 
@@ -11,6 +13,8 @@ def is_within_allowed_time():
     return time(9, 0) <= now <= time(17, 0)
 
 def login(client_socket, shared_secret, server_dilithium_key):
+    global user_role
+
     if not is_within_allowed_time():
         print("[ACCESS DENIED] Outside allowed login hours.")
         return False
@@ -31,6 +35,7 @@ def login(client_socket, shared_secret, server_dilithium_key):
         result = recv_encrypted_message(client_socket, server_dilithium_key, shared_secret)
         if result.get("status") == "SUCCESS":
             print("[LOGIN] Success.")
+            user_role = result.get("role", "guest")
             return True
         else:
             print("[LOGIN] Failed:", result.get("message"))
